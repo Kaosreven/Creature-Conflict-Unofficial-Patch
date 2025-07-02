@@ -368,7 +368,7 @@ void DISABLE_SHAKING_EPILEPSY(int WeaponTemplate, bool Disable_Weapon_Screen_Fla
         WriteValue<unsigned int>(*(int*)(WeaponTemplate)+0x4880, -1); //camera
         WriteValue<unsigned int>(*(int*)(WeaponTemplate)+0x7060, -1); //nuke knick knack
     }
-
+}
 
 void GATE_FIXES(int GameLogic, int InGate, int UnitPowerUp, int UnitControlled, int UnitFrozen, int IsAnyoneRabidAmok, int IsAnyoneUsingEquity) {
     if (*(char*)(InGate)) { //check if in gate

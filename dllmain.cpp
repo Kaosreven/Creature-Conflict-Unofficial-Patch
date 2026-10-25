@@ -5,8 +5,6 @@
 #include <ctime>
 #include <winuser.h>
 
-std::string exe_hash;
-
 std::map<std::string, char> CC_KEY_CODE = {
     { "ESC",                    0 },
     { "F1",                     1 },
@@ -209,18 +207,14 @@ std::map<std::string, char> CC_KEY_CODE = {
 };
 
 int GET_TURN_TIME(int GameLogic) {
-    return (*(int*)(GameLogic)) ? *(int*)(*(int*)(GameLogic)+0xCBB8):0;
-}
-
-char GET_TURN_STATE(int GameLogic) {
-    return (*(int*)(GameLogic)) ? *(int*)(*(int*)(GameLogic)+0xC3E4):-1;
+    return *(int*)GameLogic ? *(int*)(*(int*)(GameLogic)+0xCBB8):0;
 }
 
 void GET_SYSTEM(char system[]) {
     NTSTATUS(WINAPI *RtlGetVersion)(LPOSVERSIONINFOEXW);
     OSVERSIONINFOEXW osInfo;
     *(FARPROC*)&RtlGetVersion = GetProcAddress(GetModuleHandleA("ntdll"), "RtlGetVersion");
-    if (NULL != RtlGetVersion) {
+    if (nullptr != RtlGetVersion) {
         osInfo.dwOSVersionInfoSize = sizeof(osInfo);
         RtlGetVersion(&osInfo);
         NTSTATUS(WINAPI *wine_get_version)();
@@ -276,23 +270,22 @@ void VERSION_REPORT() {
     std::cout << "PLATFORM: " << system << std::endl;
 }
 
-void GET_EXE_HASH() {
+std::string GET_EXE_HASH() {
     char executable_path[256];
-    GetModuleFileNameA(NULL, executable_path, 256);
+    GetModuleFileNameA(nullptr, executable_path, 256);
     std::ifstream f(executable_path, std::ios::binary);
     std::vector<unsigned char> hash(picosha2::k_digest_size);
     picosha2::hash256(f, hash.begin(), hash.end());
-    exe_hash = picosha2::bytes_to_hex_string(hash.begin(), hash.end());
+    return picosha2::bytes_to_hex_string(hash.begin(), hash.end());
 }
 
 void LOG_INIT() {
     char process_path[256];
     GetCurrentDirectory(256, process_path);
-    time_t Log_Creation_Time = time(0);
-    GET_EXE_HASH();
+    time_t Log_Creation_Time = time(nullptr);
     std::cout << "--- Welcome to Creature Conflict: The Clan Wars unofficial patch Build date: 18.11.2024 ---" << std::endl;
     std::cout << "RUNNING DIRECTORY: " << process_path << std::endl;
-    std::cout << "EXECUTABLE SHA256 HASH: " << exe_hash << std::endl;
+    std::cout << "EXECUTABLE SHA256 HASH: " << GET_EXE_HASH() << std::endl;
     std::cout << "LOG FILE CREATED: " << ctime(&Log_Creation_Time);
     VERSION_REPORT();
     std::cout << "--- ---" << std::endl;
@@ -307,8 +300,6 @@ void CREATE_PATCH_CONFIG() {
         ini.SetValue("VIDEO", "DisableIntros", "0");
         ini.SetValue("VIDEO", "DisableMenuVideo", "0");
         ini.SetValue("VIDEO", "DisableCutsceneBorders", "0");
-        ini.SetValue("ACCESIBILITY", "DisableWeaponScreenFlashes", "0");
-        ini.SetValue("ACCESIBILITY", "DisableExplosionScreenShaking", "0");
         ini.SetValue("MISC", "RelocateSavesToGameDir", "0");
         ini.SetValue("MISC", "WriteLogFile", "1");
         ini.SaveFile("ccpatch.ini");
@@ -321,7 +312,7 @@ void REPLACE_CC_PATH(bool Relocate_Saves_To_Game_Dir) {
     strcat(process_path,"\\save\\");
     if (Relocate_Saves_To_Game_Dir) {
         std::cout << "Changing game config and save file directory..." << std::endl;
-        CreateDirectoryA(process_path,0);
+        CreateDirectoryA(process_path,nullptr);
         int JumpOverDirFunc = GetPattern("\x68\x00\x00\x00\x00\xE8\x00\x00\x00\x00\x83\xC4\x0C\x85\xC0\x0F\x84\x81", "x????x????xxxxxxxx");
         WriteBuf(*(int*)(GetPattern("\x68\x00\x00\x00\x00\x89\x84\x24\x14", "x????xxxx")+1), process_path, 256);
         WriteValue<char>(JumpOverDirFunc, 0xE9);
@@ -333,12 +324,12 @@ void RENDERING_PATCHES(bool Disable_Intros, bool Disable_Menu_Video, bool Disabl
     std::cout << "Removing arbitrary resolution block list..." << std::endl;
     if (Disable_Intros) {
         std::cout << "Disabling intros..." << std::endl;
-        WriteBuf(GetPattern("\x6C\x6F\x67\x6F\x73\x00", "xxxxxx"), (void *)"", 6); //logos
-        WriteBuf(GetPattern("\x73\x72\x74\x00\x00\x00\x67\x61\x6D\x65", "xxxxxxxxxx")+6, (void *)"", 10); //gameintro
+        WriteBuf(GetPattern("\x6C\x6F\x67\x6F\x73\x00", "xxxxxx"), "", 6); //logos
+        WriteBuf(GetPattern("\x73\x72\x74\x00\x00\x00\x67\x61\x6D\x65", "xxxxxxxxxx")+6, "", 10); //gameintro
     }
     if (Disable_Menu_Video) {
         std::cout << "Disabling menu video..." << std::endl;
-        WriteBuf(GetPattern("\x2E\x2E\x5C\x64\x61\x74\x61\x5C\x6D\x6F\x76\x69\x65\x5c\x6D", "xxxxxxxxxxxxxxx"), (void *)"", 29);
+        WriteBuf(GetPattern("\x2E\x2E\x5C\x64\x61\x74\x61\x5C\x6D\x6F\x76\x69\x65\x5c\x6D", "xxxxxxxxxxxxxxx"), "", 29);
     }
     if (Disable_Cutscene_Borders) {
         std::cout << "Removing cutscene borders..." << std::endl;
@@ -357,60 +348,38 @@ void MULTIPLAYER_PATCHES() {
     WriteNOP(GetPattern("\x8B\x40\x30\x03\x0A", "xxxxx"), 5);
 }
 
-void DISABLE_SHAKING_EPILEPSY(int WeaponTemplate, bool Disable_Weapon_Screen_Flashes, bool Disable_Explosion_Screen_Shaking)
-{
-    if (Disable_Explosion_Screen_Shaking) {
-        std::cout << "Disabling explosion screen shaking..." << std::endl;
-        for (int i=0; i<0x61; i++) WriteValue<float>(*(int*)(WeaponTemplate)+0x1D0*i+0x48, 0);
-    }
-    if (Disable_Weapon_Screen_Flashes) {
-        std::cout << "Disabling weapon screen flashes..." << std::endl;
-        WriteValue<unsigned int>(*(int*)(WeaponTemplate)+0x4880, -1); //camera
-        WriteValue<unsigned int>(*(int*)(WeaponTemplate)+0x7060, -1); //nuke knick knack
-    }
-}
-
 void GATE_FIXES(int GameLogic, int InGate, int UnitPowerUp, int UnitControlled, int UnitFrozen, int IsAnyoneRabidAmok, int IsAnyoneUsingEquity) {
-    if (*(char*)(InGate)) { //check if in gate
-        if (*(int*)(UnitPowerUp+*(int*)(UnitControlled)*0x4A0) == 124) WriteValue<char>(IsAnyoneRabidAmok, 0); //Rabid amok softlock fix
-        if (*(int*)(UnitPowerUp+*(int*)(UnitControlled)*0x4A0) == 110) WriteValue<char>(InGate, 0); //Teleport crash fix related to referencing dead player
+    if (*(char*)InGate) { //check if in gate
+        if (*(int*)(UnitPowerUp+UnitControlled) == 124) WriteValue<char>(IsAnyoneRabidAmok, 0); //Rabid amok softlock fix
+        if (*(int*)(UnitPowerUp+UnitControlled) == 110) WriteValue<char>(InGate, 0); //Teleport crash fix related to referencing dead player
         if (*(char*)(IsAnyoneUsingEquity)) WriteValue<char>(IsAnyoneUsingEquity, 0); //Equity softlock fix
-        if (*(int*)(UnitPowerUp+*(int*)(UnitControlled)*0x4A0) == 123 && GET_TURN_TIME(GameLogic) < 2) { //Gnaw softlock fix
-            WriteValue<char>(UnitFrozen+*(int*)(UnitControlled)*0x4A0, 0);
+        if (*(int*)(UnitPowerUp+UnitControlled) == 123 && GET_TURN_TIME(GameLogic) < 2) { //Gnaw softlock fix
+            WriteValue<char>(UnitFrozen+UnitControlled, 0);
             WriteValue<char>(InGate, 0);
         }
     }
 }
 
 void OBJECT_FIXES(int GameLogic, int InGate, int UnitPowerUp, int UnitControlled, int UnitFrozen, int IsAnyoneRabidAmok, int IsAnyoneUsingEquity, int ObjectTemplate) {
-    if (*(int*)(ObjectTemplate)) { //package sound fixes
-        if (
-            !(*(char*)(*(int*)(ObjectTemplate)+0x100*87+0xD6) == 11) ||
-            !(*(char*)(*(int*)(ObjectTemplate)+0x100*91+0xD4) == 9) ||
-            !(*(char*)(*(int*)(ObjectTemplate)+0x100*136+0xD3) == 12)
-        )
-        std::cout << "Fixing object behaviours..." << std::endl;
-        WriteValue<char>(*(int*)(ObjectTemplate)+0x100*87+0xD6, 11); // Laser Blaster package missing pickup sound
-        WriteValue<char>(*(int*)(ObjectTemplate)+0x100*91+0xD4, 9); // Mine Strike package missing spawn sound
-        WriteValue<char>(*(int*)(ObjectTemplate)+0x100*136+0xD3, 12); // Teleport package missing bounce sound, fixes pickup sound sometimes being wrong
+    if (ObjectTemplate) { //package sound fixes
+        if (*(char*)(ObjectTemplate+0x100*136+0xD3) != 12) {
+            std::cout << "Fixing object behaviours..." << std::endl;
+            WriteValue<char>(ObjectTemplate+0x100*87+0xD6, 11); // Laser Blaster package missing pickup sound
+            WriteValue<char>(ObjectTemplate+0x100*91+0xD4, 9); // Mine Strike package missing spawn sound
+            WriteValue<char>(ObjectTemplate+0x100*136+0xD3, 12); // Teleport package missing bounce sound, fixes pickup sound sometimes being wrong
+        }
     }
-    GATE_FIXES(GameLogic, InGate, UnitPowerUp, UnitControlled, UnitFrozen, IsAnyoneRabidAmok, IsAnyoneUsingEquity);
+    GATE_FIXES(GameLogic, InGate, UnitPowerUp, *(int*)(UnitControlled)*0x4A0, UnitFrozen, IsAnyoneRabidAmok, IsAnyoneUsingEquity);
 }
 
-void WEAPON_FIXES(int WeaponTemplate, bool Disable_Weapon_Screen_Flashes, bool Disable_Explosion_Screen_Shaking) {
-    if (*(int*)(WeaponTemplate)) {
-        if (
-            !(*(char*)(*(int*)(WeaponTemplate)+0x5360+0x7B) == 3) ||
-            !(*(char*)(*(int*)(WeaponTemplate)+0x5AA0+0x1AC) == 3) ||
-            !(*(char*)(*(int*)(WeaponTemplate)+0x75D0+0x31) == 1) ||
-            !(*(char*)(*(int*)(WeaponTemplate)+0x7060+0x31) == 1)
-        ) {
+void WEAPON_FIXES(int WeaponTemplate) {
+    if (WeaponTemplate) {
+        if (*(char*)(WeaponTemplate+0x7060+0x31) != 1) {
             std::cout << "Fixing weapon behaviours..." << std::endl;
-            WriteValue<char>(*(int*)(WeaponTemplate)+0x5360+0x7B, 3); // ticking briefcase, fix lack of collision with characters
-            WriteValue<char>(*(int*)(WeaponTemplate)+0x5AA0+0x1AC, 3); // casserole, fix swinging being silent
-            WriteValue<char>(*(int*)(WeaponTemplate)+0x75D0+0x31, 1); // ultrasonic grenade, consistency fix of not being able to change ttl like other grenades
-            WriteValue<char>(*(int*)(WeaponTemplate)+0x7060+0x31, 1); // Nuke Knick Knack, consistency fix of not being able to change ttl like other bombs
-            DISABLE_SHAKING_EPILEPSY(WeaponTemplate, Disable_Weapon_Screen_Flashes, Disable_Explosion_Screen_Shaking); 
+            WriteValue<char>(WeaponTemplate+0x5360+0x7B, 3); // ticking briefcase, fix lack of collision with characters
+            WriteValue<char>(WeaponTemplate+0x5AA0+0x1AC, 3); // casserole, fix swinging being silent
+            WriteValue<char>(WeaponTemplate+0x75D0+0x31, 1); // ultrasonic grenade, consistency fix of not being able to change ttl like other grenades
+            WriteValue<char>(WeaponTemplate+0x7060+0x31, 1); // Nuke Knick Knack, consistency fix of not being able to change ttl like other bombs
         }
     }
 }
@@ -431,112 +400,112 @@ void HIDE_HUD(int HideHud) {
 
 char STRING_TO_CC_KEY_CODE(std::string Key) {
     for (int i=0; i<Key.length(); i++) Key[i] = toupper(Key[i]);
-    return (Key == "") ? 115:(Key == "ESC") ? CC_KEY_CODE[Key]:((char*)(CC_KEY_CODE[Key])) ? CC_KEY_CODE[Key]:115;
+    return Key.empty() ? 115:(Key == "ESC") ? CC_KEY_CODE[Key]:(char*)CC_KEY_CODE[Key] ? CC_KEY_CODE[Key]:115;
 }
 
 void KEYBIND_REMAP() {
     Sleep(500);
     CSimpleIniA ini;
     CSimpleIniA::TNamesDepend Keys;
-    CSimpleIniA::TNamesDepend::const_iterator it;
     int keybind = (*(int*)(GetPattern("\xBA\x00\x00\x00\x00\xB3\x01\xEB", "x????xxx")+1))+8;
     std::cout << "Disabling F10 key crash functionality..." << std::endl;
     WriteValue<char>(keybind+0xA98, 115);
     if(ini.LoadFile("keybindings.ini")) {
         std::cout << "Missing keybind config, creating new one... " << std::endl;
         for(int i = 0; i < 3; i++) {
-            std::string section = "KEYBINDING_"+std::to_string(i+1);
-            ini.SetValue(section.c_str(), "GuiUp", !i ? "Up_Arrow":"");
-            ini.SetValue(section.c_str(), "GuiDown", !i ? "Down_Arrow":"");
-            ini.SetValue(section.c_str(), "GuiLeft", !i ? "Left_Arrow":"");
-            ini.SetValue(section.c_str(), "GuiRight", !i ? "Right_Arrow":"");
-            ini.SetValue(section.c_str(), "GuiNextWidget", !i ? "Tab":"");
-            ini.SetValue(section.c_str(), "GuiPageUp", !i ? "Page_Up":"");
-            ini.SetValue(section.c_str(), "GuiPageDown", !i ? "Page_Down":"");
-            ini.SetValue(section.c_str(), "GuiHome", !i ? "Home":"");
-            ini.SetValue(section.c_str(), "GuiEnd", !i ? "End":"");
-            ini.SetValue(section.c_str(), "GuiOK",  !i ? "Enter":"");
-            ini.SetValue(section.c_str(), "GuiBack", !i ? "Esc":"");
-            ini.SetValue(section.c_str(), "MultiplayerBriefingDelete", !i ? "Delete":"");
-            ini.SetValue(section.c_str(), "MultiplayerBriefingNextAlliance", !i ? "Enter":"");
-            ini.SetValue(section.c_str(), "MultiplayerBriefingNextAdvantage", !i ? "Enter":"");
-            ini.SetValue(section.c_str(), "MultiplayerBriefingTeamStatistics", (i == 0) ? "Space": (i == 1) ? "RMouse":"");
-            ini.SetValue(section.c_str(), "TeamEditingDelete", !i ? "Delete":"");
-            ini.SetValue(section.c_str(), "TeamEditingInsert", !i ? "Insert":"");
-            ini.SetValue(section.c_str(), "ButtonActivate", !i ? "Enter":"");
-            ini.SetValue(section.c_str(), "ListBoxUp", !i ? "W":"");
-            ini.SetValue(section.c_str(), "ListBoxDown", !i ? "S":"");
-            ini.SetValue(section.c_str(), "WeaponListUp", !i ? "Up_Arrow":"");
-            ini.SetValue(section.c_str(), "WeaponListDown", !i ? "Down_Arrow":"");
-            ini.SetValue(section.c_str(), "WeaponListLeft", !i ? "Left_Arrow":"");
-            ini.SetValue(section.c_str(), "WeaponListRight", !i ? "Right_Arrow":"");
-            ini.SetValue(section.c_str(), "SettingsSliderIncrement", (i == 0) ? "Equal": (i == 1) ? "Wheel_Up":"");
-            ini.SetValue(section.c_str(), "SettingsSliderDecrement", (i == 0) ? "Minus": (i == 1) ? "Wheel_Down":"");
-            ini.SetValue(section.c_str(), "InventoryOpen", (i == 0) ? "RMouse": (i == 1) ? "Insert":"");
-            ini.SetValue(section.c_str(), "InventoryWeaponInformation", !i ? "Space":"");
-            ini.SetValue(section.c_str(), "InventoryGoNextRow", !i ? "BlockBegin":"");
-            ini.SetValue(section.c_str(), "InventoryGoNextColumn", !i ? "BlockEnd":"");
-            ini.SetValue(section.c_str(), "InventoryGoRowPistol", !i ? "F1":"");
-            ini.SetValue(section.c_str(), "InventoryGoRowRifle", !i ? "F2":"");
-            ini.SetValue(section.c_str(), "InventoryGoRowCannon", !i ? "F3":"");
-            ini.SetValue(section.c_str(), "InventoryGoRowGrenade", !i ? "F4":"");
-            ini.SetValue(section.c_str(), "InventoryGoRowMine", !i ? "F5":"");
-            ini.SetValue(section.c_str(), "InventoryGoRowBonus1", !i ? "F6":"");
-            ini.SetValue(section.c_str(), "InventoryGoRowBonus2", !i ? "F7":"");
-            ini.SetValue(section.c_str(), "InventoryGoRowHandy", !i ? "F8":"");
-            ini.SetValue(section.c_str(), "ShopBuyWeapon", !i ? "Equal":"");
-            ini.SetValue(section.c_str(), "ShopRemoveWeapon", !i ? "Delete":"");
-            ini.SetValue(section.c_str(), "InGameMenuOpen", !i ? "Esc":"");
-            ini.SetValue(section.c_str(), "GamePlaceCharacter", (i == 0) ? "Enter": (i == 1) ? "LMouse":"");
-            ini.SetValue(section.c_str(), "GameForward", !i ? "W":"");
-            ini.SetValue(section.c_str(), "GameBackward", !i ? "S":"");
-            ini.SetValue(section.c_str(), "GameStrafeLeft", !i ? "A":"");
-            ini.SetValue(section.c_str(), "GameStrafeRight", !i ? "D":"");
-            ini.SetValue(section.c_str(), "GameRotateLeft", !i ? "Mouse_Left":"");
-            ini.SetValue(section.c_str(), "GameRotateRight", !i ? "Mouse_Right":"");
-            ini.SetValue(section.c_str(), "GameJump", (i == 0) ? "Space": (i == 1) ? "Left_Ctrl":"");
-            ini.SetValue(section.c_str(), "GameShot", (i == 0) ? "Enter": (i == 1) ? "LMouse":"");
-            ini.SetValue(section.c_str(), "GameUseAbility", (i == 0) ? "Enter": (i == 1) ? "LMouse":"");
-            ini.SetValue(section.c_str(), "GameChangeCamera", !i ? "R":"");
-            ini.SetValue(section.c_str(), "GameThirdPersonCamera", !i ? "E":"");
-            ini.SetValue(section.c_str(), "GameBulletCamera", !i ? "F":"");
-            ini.SetValue(section.c_str(), "GameThirdPersonCameraUp", !i ? "Mouse_Up":"");
-            ini.SetValue(section.c_str(), "GameThirdPersonCameraDown", !i ? "Mouse_Down":"");
-            ini.SetValue(section.c_str(), "GameThirdPersonCameraLeft", !i ? "Mouse_Left":"");
-            ini.SetValue(section.c_str(), "GameThirdPersonCameraRight", !i ? "Mouse_Right":"");
-            ini.SetValue(section.c_str(), "GameThirdPersonCameraBirdsEye", !i ? "MMouse":"");
-            ini.SetValue(section.c_str(), "GamePlanetCameraUp", !i ? "Mouse_Down":"");
-            ini.SetValue(section.c_str(), "GamePlanetCameraDown", !i ? "Mouse_Up":"");
-            ini.SetValue(section.c_str(), "GamePlanetCameraLeft", !i ? "Mouse_Left":"");
-            ini.SetValue(section.c_str(), "GamePlanetCameraRight", !i ? "Mouse_Right":"");
-            ini.SetValue(section.c_str(), "GamePlanetCameraZoomIn", !i ? "W":"");
-            ini.SetValue(section.c_str(), "GamePlanetCameraZoomOut", !i ? "S":"");
-            ini.SetValue(section.c_str(), "GameSelectPreviousCharacter", !i ? "Q":"");
-            ini.SetValue(section.c_str(), "GameSelectNextCharacter", !i ? "Tab":"");
-            ini.SetValue(section.c_str(), "GameSelectCharacter", (i == 0) ? "Enter": (i == 1) ? "LMouse":"");
-            ini.SetValue(section.c_str(), "GameSelectPreviousTeleport", !i ? "Q":"");
-            ini.SetValue(section.c_str(), "GameSelectNextTeleport", !i ? "Tab":"");
-            ini.SetValue(section.c_str(), "GameSelectTeleport", (i == 0) ? "Enter": (i == 1) ? "LMouse":"");
-            ini.SetValue(section.c_str(), "GameSelectPreviousPowerUp", !i ? "Q":"");
-            ini.SetValue(section.c_str(), "GameSelectNextPowerUp", !i ? "Tab":"");
-            ini.SetValue(section.c_str(), "GameSelectPowerUp", (i == 0) ? "Enter": (i == 1) ? "LMouse":"");
-            ini.SetValue(section.c_str(), "GameSelectPreviousGravestone", !i ? "Q":"");
-            ini.SetValue(section.c_str(), "GameSelectNextGravestone", !i ? "Tab":"");
-            ini.SetValue(section.c_str(), "GameSelectGravestone", (i == 0) ? "Enter": (i == 1) ? "LMouse":"");
-            ini.SetValue(section.c_str(), "GameBulletControlUp", (i == 0) ? "W": (i == 1) ? "Mouse_Up":"");
-            ini.SetValue(section.c_str(), "GameBulletControlDown", (i == 0) ? "S": (i == 1) ? "Mouse_Down":"");
-            ini.SetValue(section.c_str(), "GameBulletControlLeft", (i == 0) ? "A": (i == 1) ? "Mouse_Left":"");
-            ini.SetValue(section.c_str(), "GameBulletControlRight", (i == 0) ? "D": (i == 1) ? "Mouse_Right":"");
-            ini.SetValue(section.c_str(), "GameTimer1", !i ? "1":"");
-            ini.SetValue(section.c_str(), "GameTimer2", !i ? "2":"");
-            ini.SetValue(section.c_str(), "GameTimer3", !i ? "3":"");
-            ini.SetValue(section.c_str(), "GameTimer4", !i ? "4":"");
-            ini.SetValue(section.c_str(), "GameTimer5", !i ? "5":"");
-            ini.SetValue(section.c_str(), "GameTimer6", !i ? "6":"");
-            ini.SetValue(section.c_str(), "GameTimerPrevious", !i ? "Down_Arrow":"");
-            ini.SetValue(section.c_str(), "GameTimerNext", !i ? "Up_Arrow":"");
-            ini.SetValue(section.c_str(), "GameSkipTurn", !i ? "X":"");
-            ini.SetValue(section.c_str(), "GameToggleJetPack", !i ? "J":"");
+            std::string sectionname = "KEYBINDING_" + std::to_string(i + 1);
+            const char* section = &sectionname[0];
+            ini.SetValue(section, "GuiUp", !i ? "Up_Arrow":"");
+            ini.SetValue(section, "GuiDown", !i ? "Down_Arrow":"");
+            ini.SetValue(section, "GuiLeft", !i ? "Left_Arrow":"");
+            ini.SetValue(section, "GuiRight", !i ? "Right_Arrow":"");
+            ini.SetValue(section, "GuiNextWidget", !i ? "Tab":"");
+            ini.SetValue(section, "GuiPageUp", !i ? "Page_Up":"");
+            ini.SetValue(section, "GuiPageDown", !i ? "Page_Down":"");
+            ini.SetValue(section, "GuiHome", !i ? "Home":"");
+            ini.SetValue(section, "GuiEnd", !i ? "End":"");
+            ini.SetValue(section, "GuiOK",  !i ? "Enter":"");
+            ini.SetValue(section, "GuiBack", !i ? "Esc":"");
+            ini.SetValue(section, "MultiplayerBriefingDelete", !i ? "Delete":"");
+            ini.SetValue(section, "MultiplayerBriefingNextAlliance", !i ? "Enter":"");
+            ini.SetValue(section, "MultiplayerBriefingNextAdvantage", !i ? "Enter":"");
+            ini.SetValue(section, "MultiplayerBriefingTeamStatistics", (i == 0) ? "Space": (i == 1) ? "RMouse":"");
+            ini.SetValue(section, "TeamEditingDelete", !i ? "Delete":"");
+            ini.SetValue(section, "TeamEditingInsert", !i ? "Insert":"");
+            ini.SetValue(section, "ButtonActivate", !i ? "Enter":"");
+            ini.SetValue(section, "ListBoxUp", !i ? "W":"");
+            ini.SetValue(section, "ListBoxDown", !i ? "S":"");
+            ini.SetValue(section, "WeaponListUp", !i ? "Up_Arrow":"");
+            ini.SetValue(section, "WeaponListDown", !i ? "Down_Arrow":"");
+            ini.SetValue(section, "WeaponListLeft", !i ? "Left_Arrow":"");
+            ini.SetValue(section, "WeaponListRight", !i ? "Right_Arrow":"");
+            ini.SetValue(section, "SettingsSliderIncrement", (i == 0) ? "Equal": (i == 1) ? "Wheel_Up":"");
+            ini.SetValue(section, "SettingsSliderDecrement", (i == 0) ? "Minus": (i == 1) ? "Wheel_Down":"");
+            ini.SetValue(section, "InventoryOpen", (i == 0) ? "RMouse": (i == 1) ? "Insert":"");
+            ini.SetValue(section, "InventoryWeaponInformation", !i ? "Space":"");
+            ini.SetValue(section, "InventoryGoNextRow", !i ? "BlockBegin":"");
+            ini.SetValue(section, "InventoryGoNextColumn", !i ? "BlockEnd":"");
+            ini.SetValue(section, "InventoryGoRowPistol", !i ? "F1":"");
+            ini.SetValue(section, "InventoryGoRowRifle", !i ? "F2":"");
+            ini.SetValue(section, "InventoryGoRowCannon", !i ? "F3":"");
+            ini.SetValue(section, "InventoryGoRowGrenade", !i ? "F4":"");
+            ini.SetValue(section, "InventoryGoRowMine", !i ? "F5":"");
+            ini.SetValue(section, "InventoryGoRowBonus1", !i ? "F6":"");
+            ini.SetValue(section, "InventoryGoRowBonus2", !i ? "F7":"");
+            ini.SetValue(section, "InventoryGoRowHandy", !i ? "F8":"");
+            ini.SetValue(section, "ShopBuyWeapon", !i ? "Equal":"");
+            ini.SetValue(section, "ShopRemoveWeapon", !i ? "Delete":"");
+            ini.SetValue(section, "InGameMenuOpen", !i ? "Esc":"");
+            ini.SetValue(section, "GamePlaceCharacter", (i == 0) ? "Enter": (i == 1) ? "LMouse":"");
+            ini.SetValue(section, "GameForward", !i ? "W":"");
+            ini.SetValue(section, "GameBackward", !i ? "S":"");
+            ini.SetValue(section, "GameStrafeLeft", !i ? "A":"");
+            ini.SetValue(section, "GameStrafeRight", !i ? "D":"");
+            ini.SetValue(section, "GameRotateLeft", !i ? "Mouse_Left":"");
+            ini.SetValue(section, "GameRotateRight", !i ? "Mouse_Right":"");
+            ini.SetValue(section, "GameJump", (i == 0) ? "Space": (i == 1) ? "Left_Ctrl":"");
+            ini.SetValue(section, "GameShot", (i == 0) ? "Enter": (i == 1) ? "LMouse":"");
+            ini.SetValue(section, "GameUseAbility", (i == 0) ? "Enter": (i == 1) ? "LMouse":"");
+            ini.SetValue(section, "GameChangeCamera", !i ? "R":"");
+            ini.SetValue(section, "GameThirdPersonCamera", !i ? "E":"");
+            ini.SetValue(section, "GameBulletCamera", !i ? "F":"");
+            ini.SetValue(section, "GameThirdPersonCameraUp", !i ? "Mouse_Up":"");
+            ini.SetValue(section, "GameThirdPersonCameraDown", !i ? "Mouse_Down":"");
+            ini.SetValue(section, "GameThirdPersonCameraLeft", !i ? "Mouse_Left":"");
+            ini.SetValue(section, "GameThirdPersonCameraRight", !i ? "Mouse_Right":"");
+            ini.SetValue(section, "GameThirdPersonCameraBirdsEye", !i ? "MMouse":"");
+            ini.SetValue(section, "GamePlanetCameraUp", !i ? "Mouse_Down":"");
+            ini.SetValue(section, "GamePlanetCameraDown", !i ? "Mouse_Up":"");
+            ini.SetValue(section, "GamePlanetCameraLeft", !i ? "Mouse_Left":"");
+            ini.SetValue(section, "GamePlanetCameraRight", !i ? "Mouse_Right":"");
+            ini.SetValue(section, "GamePlanetCameraZoomIn", !i ? "W":"");
+            ini.SetValue(section, "GamePlanetCameraZoomOut", !i ? "S":"");
+            ini.SetValue(section, "GameSelectPreviousCharacter", !i ? "Q":"");
+            ini.SetValue(section, "GameSelectNextCharacter", !i ? "Tab":"");
+            ini.SetValue(section, "GameSelectCharacter", (i == 0) ? "Enter": (i == 1) ? "LMouse":"");
+            ini.SetValue(section, "GameSelectPreviousTeleport", !i ? "Q":"");
+            ini.SetValue(section, "GameSelectNextTeleport", !i ? "Tab":"");
+            ini.SetValue(section, "GameSelectTeleport", (i == 0) ? "Enter": (i == 1) ? "LMouse":"");
+            ini.SetValue(section, "GameSelectPreviousPowerUp", !i ? "Q":"");
+            ini.SetValue(section, "GameSelectNextPowerUp", !i ? "Tab":"");
+            ini.SetValue(section, "GameSelectPowerUp", (i == 0) ? "Enter": (i == 1) ? "LMouse":"");
+            ini.SetValue(section, "GameSelectPreviousGravestone", !i ? "Q":"");
+            ini.SetValue(section, "GameSelectNextGravestone", !i ? "Tab":"");
+            ini.SetValue(section, "GameSelectGravestone", (i == 0) ? "Enter": (i == 1) ? "LMouse":"");
+            ini.SetValue(section, "GameBulletControlUp", (i == 0) ? "W": (i == 1) ? "Mouse_Up":"");
+            ini.SetValue(section, "GameBulletControlDown", (i == 0) ? "S": (i == 1) ? "Mouse_Down":"");
+            ini.SetValue(section, "GameBulletControlLeft", (i == 0) ? "A": (i == 1) ? "Mouse_Left":"");
+            ini.SetValue(section, "GameBulletControlRight", (i == 0) ? "D": (i == 1) ? "Mouse_Right":"");
+            ini.SetValue(section, "GameTimer1", !i ? "1":"");
+            ini.SetValue(section, "GameTimer2", !i ? "2":"");
+            ini.SetValue(section, "GameTimer3", !i ? "3":"");
+            ini.SetValue(section, "GameTimer4", !i ? "4":"");
+            ini.SetValue(section, "GameTimer5", !i ? "5":"");
+            ini.SetValue(section, "GameTimer6", !i ? "6":"");
+            ini.SetValue(section, "GameTimerPrevious", !i ? "Down_Arrow":"");
+            ini.SetValue(section, "GameTimerNext", !i ? "Up_Arrow":"");
+            ini.SetValue(section, "GameSkipTurn", !i ? "X":"");
+            ini.SetValue(section, "GameToggleJetPack", !i ? "J":"");
         }
         ini.SaveFile("keybindings.ini");
         ini.LoadFile("keybindings.ini");
@@ -544,34 +513,27 @@ void KEYBIND_REMAP() {
     std::cout << "Patching keybinds... " << std::endl;
     for(int i = 0; i < 3; i++) {
         std::cout << "Patched keybind row: " << i+1 << std::endl;
-        std::string section = "KEYBINDING_"+std::to_string(i+1);
-        int offset = (i == 0) ? 2:(i==1) ? 94:(i==2) ? 186:0;
-        ini.GetAllKeys(section.c_str(),Keys);
+        std::string sectionname = "KEYBINDING_" + std::to_string(i + 1);
+        const char* section = &sectionname[0];
+        int offset = i == 0 ? 2:i==1 ? 94:i==2 ? 186:0;
+        ini.GetAllKeys(section,Keys);
         Keys.sort(CSimpleIniA::Entry::LoadOrder());
-        for (it = Keys.begin(); it != Keys.end(); it++) {
-            switch(it->nOrder) {
+        for (CSimpleIniA::TNamesDepend::const_iterator it = Keys.begin(); it != Keys.end(); it++) {
+            switch(it->nOrder % 92) {
                 case 18:
-                case 110:
-                case 202:
                     offset = offset-4;
-                break;
                 case 39:
-                case 131:
-                case 223:
                     offset = offset-1;
-                break;
                 case 42:
-                case 134:
-                case 226:
                     offset = offset-2;
                 break;
             }
-            WriteValue<char>((keybind+4*i)+0xC*(it->nOrder-offset),STRING_TO_CC_KEY_CODE(std::string(ini.GetValue(section.c_str(), it->pItem))));
+            WriteValue<char>((keybind+4*i)+0xC*(it->nOrder-offset),STRING_TO_CC_KEY_CODE(std::string(ini.GetValue(section, it->pItem))));
         }
     }
 }
 
-void LOOP(bool Disable_Weapon_Screen_Flashes, bool Disable_Explosion_Screen_Shaking) {
+void LOOP() {
     int WeaponTemplate = *(int*)(GetPattern("\x8B\x0D\x00\x00\x00\x00\x8B\x54\x08\x2C\x83\xC4\x04\x83\xFA\x02\x0F", "xx????xxxxxxxxxxx")+2);
     int ObjectTemplate = *(int*)(GetPattern("\x8B\x0D\x00\x00\x00\x00\xC1\xE0\x08\x8B\x54", "xx????xxxxx")+2);
     int IsAnyoneUsingEquity = *(int*)(GetPattern("\x38\x1D\x00\x00\x00\x00\x75\x09", "xx????xx")+2);
@@ -581,7 +543,6 @@ void LOOP(bool Disable_Weapon_Screen_Flashes, bool Disable_Explosion_Screen_Shak
     int UnitPowerUp = *(int*)(GetPattern("\x8B\x82\x00\x00\x00\x00\x83\xC0\x8C", "xx????xxx")+2);
     int InGate = *(int*)(GetPattern("\xA0\x00\x00\x00\x00\x84\xC0\x75\x2C\x83", "x????xxxxx")+1);
     int GameLogic = *(int*)(GetPattern("\x8B\x0D\x00\x00\x00\x00\x8A\x41\x59\x84\xC0\x75\x1C", "xx????xxxxxxx")+2);
-    int GameSpeed = *(int*)(GetPattern("\xD9\x05\x00\x00\x00\x00\x89\x0D\x00\x00\x00\x00\xD8", "xx????xx????x")+2);
     int UnitCount = *(int*)(GetPattern("\xA1\x00\x00\x00\x00\x53\x56\x83", "x????xxx")+1);
     int GameSaveSettings = *(int*)(GetPattern("\xA0\x00\x00\x00\x00\x24\x02\xF6", "x????xxx")+1);
     int LowCharFramerateAnimDist = *(int*)(GetPattern("\xD8\x1D\x00\x00\x00\x00\xDF\xE0\xF6\xC4\x41\x75\x29\x8B\x96", "xx????xxxxxxxxx")+2);
@@ -593,9 +554,9 @@ void LOOP(bool Disable_Weapon_Screen_Flashes, bool Disable_Explosion_Screen_Shak
         Sleep(50);
         WriteValue<float>(RenderAspectRatio, (*(float*)(ResolutionX))/(*(float*)(ResolutionY))); //display aspect ratio fix on resolution change
         WriteValue<float>(LowCharFramerateAnimDist, (!((*(char *)(GameSaveSettings) >> 3) & 1) & ((*(char *)(GameSaveSettings) >> 4) & 1)) ? 128:64); //change distance from which characters are animated at lower framerate on high settings
-        if (*(char*)(UnitCount)) { //check if game started by checking whether there is atleast one character
-            OBJECT_FIXES(GameLogic, InGate, UnitPowerUp, UnitControlled, UnitFrozen, IsAnyoneRabidAmok, IsAnyoneUsingEquity, ObjectTemplate);
-            WEAPON_FIXES(WeaponTemplate, Disable_Weapon_Screen_Flashes, Disable_Explosion_Screen_Shaking);
+        if (*(char*)UnitCount) { //check if game started by checking whether there is atleast one character
+            OBJECT_FIXES(GameLogic, InGate, UnitPowerUp, UnitControlled, UnitFrozen, IsAnyoneRabidAmok, IsAnyoneUsingEquity, *(int*)ObjectTemplate);
+            WEAPON_FIXES(*(int*)WeaponTemplate);
             HIDE_HUD(HideHud);
         }
     }
@@ -611,7 +572,7 @@ DWORD WINAPI Init(LPVOID lpParameter) {
     MULTIPLAYER_PATCHES();
     MISC_PATCHES();
     KEYBIND_REMAP();
-    LOOP(std::atoi(ini.GetValue("ACCESIBILITY", "DisableWeaponScreenFlashes")),std::atoi(ini.GetValue("ACCESIBILITY", "DisableExplosionScreenShaking")));
+    LOOP();
     return 0;
 }
 

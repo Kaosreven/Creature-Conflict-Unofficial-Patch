@@ -10,7 +10,7 @@ void WriteValue(int addr, T data)
     VirtualProtect((int*)addr, 4, oldProtect, &oldProtect);
 }
 
-void WriteBuf(int addr, void * data, int len) 
+void WriteBuf(int addr, const void * data, int len)
 {
     unsigned long oldProtect;
 
@@ -29,7 +29,7 @@ void WriteNOP(int addr, int len)
 }
 
 template <typename T>
-void WritePointer(int addrTgt, T * addrSrc) 
+void WritePointer(int addrTgt, T * addrSrc)
 {
     unsigned long oldProtect;
 
@@ -69,9 +69,9 @@ void WriteRelJle(int jumpSrc, int jumpTgt)
 HMODULE GetModule() {
     HMODULE lphModule[1024];
     DWORD lpcbNeeded(NULL);
-    if (!EnumProcessModules(GetCurrentProcess(), lphModule, sizeof(lphModule), &lpcbNeeded)) return NULL;
+    if (!EnumProcessModules(GetCurrentProcess(), lphModule, sizeof(lphModule), &lpcbNeeded)) return nullptr;
     TCHAR szModName[MAX_PATH];
-    if (!GetModuleFileNameEx(GetCurrentProcess(), lphModule[0], szModName, sizeof(szModName) / sizeof(TCHAR))) return NULL;
+    if (!GetModuleFileNameEx(GetCurrentProcess(), lphModule[0], szModName, sizeof(szModName) / sizeof(TCHAR))) return nullptr;
     return lphModule[0];
 }
 
@@ -79,8 +79,8 @@ int GetBaseAddress() {
     return (int)GetModule();
 }
 
-int GetPattern(char * pattern, char* mask) {
-    MODULEINFO modInfo = {0};
+int GetPattern(const char * pattern, const char* mask) {
+    MODULEINFO modInfo = {nullptr};
     GetModuleInformation(GetCurrentProcess(), GetModule(), &modInfo, sizeof(MODULEINFO));
     int base = (int)modInfo.lpBaseOfDll;
     int size = (int)modInfo.SizeOfImage;
